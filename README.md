@@ -17,7 +17,7 @@ All transaction data stays in your browser. Your Splitwise token is stored in `l
 ## Quick Start
 
 ```bash
-git clone https://github.com/<your-username>/splitsync.git
+git clone https://github.com/venkateshellaboina/splitsync.git
 cd splitsync
 npm install
 npm run dev
