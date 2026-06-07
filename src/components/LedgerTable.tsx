@@ -22,7 +22,6 @@ import { isTransactionSynced, markAsSynced } from "@/lib/synced-history";
 interface LedgerTableProps {
   transactions: NormalizedTransaction[];
   showProcessed: boolean;
-  isRefundView?: boolean;
 }
 
 const ROW_HEIGHT = 52;
@@ -30,7 +29,6 @@ const ROW_HEIGHT = 52;
 export function LedgerTable({
   transactions,
   showProcessed,
-  isRefundView = false,
 }: LedgerTableProps) {
   const { groups, currentUser, updateTransaction } = useApp();
   const parentRef = useRef<HTMLDivElement>(null);
@@ -43,12 +41,11 @@ export function LedgerTable({
 
   const filtered = useMemo(() => {
     return transactions.filter((tx) => {
-      if (tx.isRefund !== isRefundView) return false;
       if (!showProcessed && (tx.status === "IGNORED" || tx.status === "SUCCESS"))
         return false;
       return true;
     });
-  }, [transactions, showProcessed, isRefundView]);
+  }, [transactions, showProcessed]);
 
   const useVirtual = filtered.length > 500;
 
@@ -272,7 +269,14 @@ export function LedgerTable({
       >
         <span className="text-xs text-zinc-500">{tx.date}</span>
         <div className="min-w-0">
-          <p className="truncate font-medium">{tx.description}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="truncate font-medium">{tx.description}</p>
+            {tx.isRefund && (
+              <span className="shrink-0 rounded px-1 py-0.5 text-xs font-medium bg-amber-100 text-amber-700">
+                Refund
+              </span>
+            )}
+          </div>
           {hasDescriptionOverride(tx) && (
             <p className="truncate text-xs text-blue-600">
               Sync: {tx.syncDescriptionOverride}
@@ -286,7 +290,7 @@ export function LedgerTable({
           {formatCurrency(tx.amount)}
         </span>
 
-        {!isRefundView ? (
+        {!tx.isRefund ? (
           <>
             <GroupSelector
               groups={groups}
@@ -355,9 +359,22 @@ export function LedgerTable({
             </div>
           </>
         ) : (
-          <span className="col-span-3 text-xs text-zinc-400 italic">
-            Refund / credit
-          </span>
+          <div className="col-span-3 flex justify-end">
+            {tx.status !== "IGNORED" ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  ignoreTransaction(tx, index);
+                }}
+                title="Ignore"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            ) : null}
+          </div>
         )}
       </div>
     );
@@ -366,7 +383,7 @@ export function LedgerTable({
   const activeTx = filtered[activeIndex];
   const canEditDescription =
     activeTx &&
-    !isRefundView &&
+    !activeTx.isRefund &&
     activeTx.status !== "SYNCING" &&
     activeTx.status !== "SUCCESS" &&
     activeTx.status !== "IGNORED";
@@ -386,15 +403,9 @@ export function LedgerTable({
         <span>Date</span>
         <span>Description</span>
         <span className="text-right">Amount</span>
-        {!isRefundView ? (
-          <>
-            <span>Group</span>
-            <span>Members</span>
-            <span className="text-right">Actions</span>
-          </>
-        ) : (
-          <span className="col-span-3">Type</span>
-        )}
+        <span>Group</span>
+        <span>Members</span>
+        <span className="text-right">Actions</span>
       </div>
 
       {canEditDescription && (
