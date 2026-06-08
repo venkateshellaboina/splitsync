@@ -26,28 +26,45 @@ export function CsvUpload() {
   const [isParsing, setIsParsing] = useState(false);
   const [lastResult, setLastResult] = useState<{
     count: number;
+    fileCount: number;
     syncedCount: number;
-    provider: string;
+    providerLabel: string;
     errors: string[];
     detectedColumns?: string[];
   } | null>(null);
 
-  const handleFile = async (file: File) => {
+  const handleFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+
     setIsParsing(true);
     setLastResult(null);
     try {
-      const result = await parseCsvFile(file);
-      const withDefaults = applyDefaultRules(result.transactions, groups);
+      const results = await Promise.all(
+        files.map(async (file) => ({
+          file,
+          result: await parseCsvFile(file),
+        }))
+      );
+      const transactions = results.flatMap(({ result }) => result.transactions);
+      const withDefaults = applyDefaultRules(transactions, groups);
       const withHistory = applySyncedHistory(withDefaults);
       setTransactions(withHistory);
 
       const syncedCount = withHistory.filter((tx) => tx.status === "SUCCESS").length;
+      const providers = Array.from(
+        new Set(results.map(({ result }) => formatProvider(result.provider)))
+      );
+      const errors = results.flatMap(({ file, result }) =>
+        result.errors.map((error) => `${file.name}: ${error}`)
+      );
       setLastResult({
         count: withHistory.length,
+        fileCount: files.length,
         syncedCount,
-        provider: result.provider,
-        errors: result.errors,
-        detectedColumns: result.detectedColumns,
+        providerLabel: providers.join(", "),
+        errors,
+        detectedColumns: results.find(({ result }) => result.detectedColumns)
+          ?.result.detectedColumns,
       });
     } finally {
       setIsParsing(false);
@@ -60,10 +77,11 @@ export function CsvUpload() {
         ref={inputRef}
         type="file"
         accept=".csv"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
+          const files = Array.from(e.target.files ?? []);
+          void handleFiles(files);
           e.target.value = "";
         }}
       />
@@ -74,13 +92,14 @@ export function CsvUpload() {
         onClick={() => inputRef.current?.click()}
       >
         <Upload className="h-4 w-4" />
-        {isParsing ? "Parsing..." : "Upload CSV"}
+        {isParsing ? "Parsing..." : "Upload CSVs"}
       </Button>
       {lastResult && (
         <div className="text-sm text-muted-foreground">
           <span>
-            Loaded {lastResult.count} transactions (
-            {formatProvider(lastResult.provider)})
+            Loaded {lastResult.count} transactions from {lastResult.fileCount}{" "}
+            CSV{lastResult.fileCount !== 1 ? "s" : ""} (
+            {lastResult.providerLabel})
             {lastResult.syncedCount > 0 &&
               ` · ${lastResult.syncedCount} already synced`}
             {lastResult.errors.length > 0 &&
