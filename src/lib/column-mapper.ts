@@ -16,9 +16,7 @@ function cleanHeader(header: string): string {
 
 function headerMatches(header: string, candidates: string[]): boolean {
   const h = header.toLowerCase();
-  return candidates.some(
-    (c) => h === c || h.includes(c) || c.includes(h)
-  );
+  return candidates.some((c) => h === c || h.includes(c));
 }
 
 function findHeader(
@@ -110,16 +108,21 @@ export function buildColumnMapping(headers: string[]): ColumnMapping | null {
     !amountKey;
 
   if (
+    cleaned.some((h) => headerMatches(h, ["clearing date"])) &&
+    cleaned.some((h) => headerMatches(h, ["purchased by"])) &&
+    cleaned.some((h) => headerMatches(h, ["amount"]))
+  ) {
+    provider = "APPLE_CARD";
+  } else if (
     hasDebitCredit &&
     dateLower.includes("transaction date") &&
     cleaned.some((h) => headerMatches(h, ["description"]))
   ) {
     provider = "CAPITAL_ONE_CREDIT";
   } else if (
-    dateLower.includes("transaction date") ||
-    (headerMatches(dateKey, ["transaction date"]) &&
-      cleaned.some((h) => headerMatches(h, ["description"])) &&
-      cleaned.some((h) => headerMatches(h, ["amount"])))
+    (dateLower.includes("transaction date") || dateLower === "trans date") &&
+    cleaned.some((h) => headerMatches(h, ["description"])) &&
+    cleaned.some((h) => headerMatches(h, ["amount"]))
   ) {
     provider = "CHASE_CREDIT";
   } else if (

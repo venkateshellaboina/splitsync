@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { Check, Loader2, Upload, X } from "lucide-react";
+import { Check, Loader2, Pencil, RotateCcw, Send, X } from "lucide-react";
 import type { NormalizedTransaction } from "@/types";
 import { useApp } from "@/context/AppContext";
 import { GroupSelector } from "@/components/GroupSelector";
 import { MemberMultiSelect } from "@/components/MemberMultiSelect";
+import { ShareEditor } from "@/components/ShareEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -17,23 +17,40 @@ import {
   getSplitwiseDescription,
   hasDescriptionOverride,
 } from "@/lib/splitwise-description";
-import { isTransactionSynced, markAsSynced } from "@/lib/synced-history";
+import {
+  formatSyncedTimestamp,
+  getSyncedRecord,
+  isTransactionSynced,
+  markAsSynced,
+  removeFromSyncedHistory,
+} from "@/lib/synced-history";
+import {
+  buildUserShareMap,
+  defaultUserShareMap,
+  getUserShareWeights,
+  hasCustomShares,
+} from "@/lib/user-shares";
 
 interface LedgerTableProps {
   transactions: NormalizedTransaction[];
   showProcessed: boolean;
-  isRefundView?: boolean;
 }
 
 const ROW_HEIGHT = 52;
 
+function statusForAssignment(
+  groupId: string | null,
+  userIds: string[]
+): NormalizedTransaction["status"] {
+  return groupId && userIds.length > 0 ? "READY" : "UNASSIGNED";
+}
+
 export function LedgerTable({
   transactions,
   showProcessed,
-  isRefundView = false,
 }: LedgerTableProps) {
   const { groups, currentUser, updateTransaction } = useApp();
-  const parentRef = useRef<HTMLDivElement>(null);
+  const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [activeIndex, setActiveIndex] = useState(0);
   const [groupOpen, setGroupOpen] = useState(false);
   const [memberOpen, setMemberOpen] = useState(false);
@@ -43,28 +60,25 @@ export function LedgerTable({
 
   const filtered = useMemo(() => {
     return transactions.filter((tx) => {
-      if (tx.isRefund !== isRefundView) return false;
       if (!showProcessed && (tx.status === "IGNORED" || tx.status === "SUCCESS"))
         return false;
       return true;
     });
-  }, [transactions, showProcessed, isRefundView]);
+  }, [transactions, showProcessed]);
 
-  const useVirtual = filtered.length > 500;
+  const safeActiveIndex = useMemo(
+    () => Math.min(activeIndex, Math.max(0, filtered.length - 1)),
+    [activeIndex, filtered.length]
+  );
 
-  const virtualizer = useVirtualizer({
-    count: filtered.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => ROW_HEIGHT,
-    overscan: 10,
-    enabled: useVirtual,
-  });
-
-  useEffect(() => {
-    if (activeIndex >= filtered.length) {
-      setActiveIndex(Math.max(0, filtered.length - 1));
-    }
-  }, [filtered.length, activeIndex]);
+  const scrollActiveRowIntoView = useCallback((index: number) => {
+    requestAnimationFrame(() => {
+      rowRefs.current.get(index)?.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
+    });
+  }, []);
 
   const syncTransaction = useCallback(
     async (tx: NormalizedTransaction) => {
@@ -93,6 +107,7 @@ export function LedgerTable({
             description: getSplitwiseDescription(tx),
             groupId: tx.selectedGroupId,
             userIds: tx.selectedUserIds.map(Number),
+            userShares: getUserShareWeights(tx.selectedUserIds, tx.userShares),
             payerId: currentUser.id,
           }),
         });
@@ -115,7 +130,11 @@ export function LedgerTable({
         );
 
         markAsSynced(tx);
-        updateTransaction(tx.id, { status: "SUCCESS", errorMessage: undefined });
+        updateTransaction(tx.id, {
+          status: "SUCCESS",
+          previouslySyncedAt: undefined,
+          errorMessage: undefined,
+        });
       } catch (err) {
         updateTransaction(tx.id, {
           status: "ERROR",
@@ -136,6 +155,29 @@ export function LedgerTable({
     [updateTransaction, filtered.length]
   );
 
+  const reopenTransaction = useCallback(
+    (tx: NormalizedTransaction) => {
+      const syncedRecord = getSyncedRecord(tx);
+      removeFromSyncedHistory(tx);
+      updateTransaction(tx.id, {
+        status: statusForAssignment(tx.selectedGroupId, tx.selectedUserIds),
+        previouslySyncedAt: syncedRecord?.syncedAt ?? tx.previouslySyncedAt,
+        errorMessage: undefined,
+      });
+    },
+    [updateTransaction]
+  );
+
+  const restoreTransaction = useCallback(
+    (tx: NormalizedTransaction) => {
+      updateTransaction(tx.id, {
+        status: statusForAssignment(tx.selectedGroupId, tx.selectedUserIds),
+        errorMessage: undefined,
+      });
+    },
+    [updateTransaction]
+  );
+
   const handleGroupChange = useCallback(
     (tx: NormalizedTransaction, groupId: string | null) => {
       const group = groups.find((g) => g.id.toString() === groupId);
@@ -146,8 +188,8 @@ export function LedgerTable({
       updateTransaction(tx.id, {
         selectedGroupId: groupId,
         selectedUserIds: memberIds,
-        status:
-          groupId && memberIds.length > 0 ? "READY" : "UNASSIGNED",
+        userShares: defaultUserShareMap(memberIds),
+        status: statusForAssignment(groupId, memberIds),
       });
     },
     [groups, updateTransaction]
@@ -157,8 +199,8 @@ export function LedgerTable({
     (tx: NormalizedTransaction, userIds: string[]) => {
       updateTransaction(tx.id, {
         selectedUserIds: userIds,
-        status:
-          tx.selectedGroupId && userIds.length > 0 ? "READY" : "UNASSIGNED",
+        userShares: buildUserShareMap(userIds, tx.userShares),
+        status: statusForAssignment(tx.selectedGroupId, userIds),
       });
     },
     [updateTransaction]
@@ -169,15 +211,11 @@ export function LedgerTable({
       if (filtered.length === 0) return;
 
       const target = e.target as HTMLElement;
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      ) {
+      if (target.closest("input, textarea, [contenteditable='true']")) {
         return;
       }
 
-      const activeTx = filtered[activeIndex];
+      const activeTx = filtered[safeActiveIndex];
       if (!activeTx) return;
 
       switch (e.key) {
@@ -186,14 +224,22 @@ export function LedgerTable({
           e.preventDefault();
           setGroupOpen(false);
           setMemberOpen(false);
-          setActiveIndex((i) => Math.min(i + 1, filtered.length - 1));
+          setActiveIndex((i) => {
+            const next = Math.min(i + 1, filtered.length - 1);
+            scrollActiveRowIntoView(next);
+            return next;
+          });
           break;
         case "ArrowUp":
         case "k":
           e.preventDefault();
           setGroupOpen(false);
           setMemberOpen(false);
-          setActiveIndex((i) => Math.max(i - 1, 0));
+          setActiveIndex((i) => {
+            const next = Math.max(i - 1, 0);
+            scrollActiveRowIntoView(next);
+            return next;
+          });
           break;
         case " ":
           e.preventDefault();
@@ -231,7 +277,7 @@ export function LedgerTable({
             activeTx.status !== "SYNCING" &&
             activeTx.status !== "SUCCESS"
           ) {
-            ignoreTransaction(activeTx, activeIndex);
+            ignoreTransaction(activeTx, safeActiveIndex);
           }
           break;
       }
@@ -241,14 +287,15 @@ export function LedgerTable({
     return () => window.removeEventListener("keydown", handler);
   }, [
     filtered,
-    activeIndex,
+    safeActiveIndex,
     selectorFocus,
     syncTransaction,
     ignoreTransaction,
+    scrollActiveRowIntoView,
   ]);
 
   const renderRow = (tx: NormalizedTransaction, index: number) => {
-    const isActive = index === activeIndex;
+    const isActive = index === safeActiveIndex;
     const isReadOnly =
       tx.status === "SYNCING" || tx.status === "SUCCESS";
     const group = groups.find(
@@ -259,34 +306,63 @@ export function LedgerTable({
     return (
       <div
         key={tx.id}
+        ref={(el) => {
+          if (el) rowRefs.current.set(index, el);
+          else rowRefs.current.delete(index);
+        }}
         className={cn(
-          "grid grid-cols-[100px_1fr_100px_160px_160px_80px] gap-2 items-center px-3 border-b border-zinc-100 text-sm",
-          isActive && "outline outline-2 outline-zinc-400 outline-offset-[-2px]",
-          tx.status === "SUCCESS" && "bg-green-50/40",
+          "grid grid-cols-[100px_1fr_100px_160px_160px_80px] gap-2 items-center px-3 border-b border-border text-sm",
+          isActive && "outline outline-2 outline-ring outline-offset-[-2px]",
+          (tx.status === "SUCCESS" || tx.previouslySyncedAt) && "bg-success/60",
           tx.status === "IGNORED" && "opacity-40 line-through",
           tx.status === "SYNCING" && "animate-pulse",
-          tx.status === "ERROR" && "bg-red-50/30"
+          tx.status === "ERROR" && "bg-danger/60"
         )}
         style={{ height: ROW_HEIGHT }}
-        onClick={() => setActiveIndex(index)}
+        onClick={() => {
+          setActiveIndex(index);
+          scrollActiveRowIntoView(index);
+        }}
       >
-        <span className="text-xs text-zinc-500">{tx.date}</span>
+        <span className="text-xs text-muted-foreground">{tx.date}</span>
         <div className="min-w-0">
-          <p className="truncate font-medium">{tx.description}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="truncate font-medium">{tx.description}</p>
+            {tx.isRefund && (
+              <span className="shrink-0 rounded px-1 py-0.5 text-xs font-medium bg-warning text-warning-foreground">
+                Refund
+              </span>
+            )}
+            {(tx.status === "SUCCESS" || tx.previouslySyncedAt) && (
+              <span className="shrink-0 rounded px-1 py-0.5 text-xs font-medium bg-success text-success-foreground">
+                Posted
+              </span>
+            )}
+          </div>
+          {tx.previouslySyncedAt && tx.status !== "SUCCESS" && (
+            <p className="truncate text-xs text-success-foreground">
+              Previously synced {formatSyncedTimestamp(tx.previouslySyncedAt)}
+            </p>
+          )}
           {hasDescriptionOverride(tx) && (
-            <p className="truncate text-xs text-blue-600">
+            <p className="truncate text-xs text-primary">
               Sync: {tx.syncDescriptionOverride}
             </p>
           )}
+          {hasCustomShares(tx.selectedUserIds, tx.userShares) && (
+            <p className="truncate text-xs text-muted-foreground">
+              Custom shares
+            </p>
+          )}
           {tx.errorMessage && (
-            <p className="truncate text-xs text-red-600">{tx.errorMessage}</p>
+            <p className="truncate text-xs text-danger-foreground">{tx.errorMessage}</p>
           )}
         </div>
         <span className="text-right font-mono text-xs">
           {formatCurrency(tx.amount)}
         </span>
 
-        {!isRefundView ? (
+        {!tx.isRefund ? (
           <>
             <GroupSelector
               groups={groups}
@@ -320,10 +396,37 @@ export function LedgerTable({
             />
             <div className="flex justify-end gap-1">
               {tx.status === "SYNCING" ? (
-                <Loader2 className="h-4 w-4 animate-spin text-zinc-400" />
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               ) : tx.status === "SUCCESS" ? (
-                <Check className="h-4 w-4 text-green-600" />
-              ) : tx.status !== "IGNORED" ? (
+                <>
+                  <Check className="h-4 w-4 text-success-foreground self-center" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      reopenTransaction(tx);
+                    }}
+                    title="Edit and re-send (creates a new Splitwise expense)"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              ) : tx.status === "IGNORED" ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    restoreTransaction(tx);
+                  }}
+                  title="Restore transaction"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              ) : (
                 <>
                   <Button
                     variant="ghost"
@@ -334,9 +437,9 @@ export function LedgerTable({
                       e.stopPropagation();
                       syncTransaction(tx);
                     }}
-                    title="Sync to Splitwise"
+                    title="Send to Splitwise"
                   >
-                    <Upload className="h-3.5 w-3.5" />
+                    <Send className="h-3.5 w-3.5" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -351,29 +454,65 @@ export function LedgerTable({
                     <X className="h-3.5 w-3.5" />
                   </Button>
                 </>
-              ) : null}
+              )}
             </div>
           </>
         ) : (
-          <span className="col-span-3 text-xs text-zinc-400 italic">
-            Refund / credit
-          </span>
+          <>
+            <span className="text-xs text-muted-foreground italic">—</span>
+            <span className="text-xs text-muted-foreground italic">—</span>
+            <div className="flex justify-end">
+              {tx.status === "IGNORED" ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    restoreTransaction(tx);
+                  }}
+                  title="Restore transaction"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    ignoreTransaction(tx, index);
+                  }}
+                  title="Ignore"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          </>
         )}
       </div>
     );
   };
 
-  const activeTx = filtered[activeIndex];
-  const canEditDescription =
+  const activeTx = filtered[safeActiveIndex];
+  const canEditAssignment =
     activeTx &&
-    !isRefundView &&
+    !activeTx.isRefund &&
     activeTx.status !== "SYNCING" &&
     activeTx.status !== "SUCCESS" &&
     activeTx.status !== "IGNORED";
+  const canEditDescription = canEditAssignment;
+  const canEditShares =
+    canEditAssignment && activeTx.selectedUserIds.length > 0;
+  const activeGroup = groups.find(
+    (g) => g.id.toString() === activeTx?.selectedGroupId
+  );
 
   if (filtered.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-zinc-400">
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
         <p className="text-sm">No transactions to display.</p>
         <p className="text-xs mt-1">Upload a CSV to get started.</p>
       </div>
@@ -382,103 +521,88 @@ export function LedgerTable({
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-[100px_1fr_100px_160px_160px_80px] gap-2 px-3 py-2 text-xs font-medium text-zinc-500 border-b border-zinc-200">
+      <div className="grid grid-cols-[100px_1fr_100px_160px_160px_80px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border">
         <span>Date</span>
         <span>Description</span>
         <span className="text-right">Amount</span>
-        {!isRefundView ? (
-          <>
-            <span>Group</span>
-            <span>Members</span>
-            <span className="text-right">Actions</span>
-          </>
-        ) : (
-          <span className="col-span-3">Type</span>
-        )}
+        <span>Group</span>
+        <span>Members</span>
+        <span className="text-right">Actions</span>
       </div>
 
-      {canEditDescription && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-zinc-200 bg-zinc-50">
-          <label
-            htmlFor={`sync-desc-${activeTx.id}`}
-            className="text-xs font-medium text-zinc-600 shrink-0"
-          >
-            Splitwise description
-          </label>
-          <Input
-            id={`sync-desc-${activeTx.id}`}
-            value={
-              activeTx.syncDescriptionOverride ??
-              getDefaultSplitwiseDescription(activeTx)
-            }
-            onChange={(e) => {
-              const value = e.target.value;
-              const defaultDesc = getDefaultSplitwiseDescription(activeTx);
-              updateTransaction(activeTx.id, {
-                syncDescriptionOverride:
-                  value.trim() === defaultDesc ? undefined : value,
-              });
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="h-8 text-xs flex-1"
-          />
-          {hasDescriptionOverride(activeTx) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs shrink-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                updateTransaction(activeTx.id, {
-                  syncDescriptionOverride: undefined,
-                });
-              }}
-            >
-              Reset
-            </Button>
+      {(canEditDescription || canEditShares) && (
+        <div className="space-y-2 px-3 py-2 rounded-md border border-border bg-muted">
+          {activeTx.previouslySyncedAt && (
+            <p className="text-xs text-success-foreground">
+              Previously posted to Splitwise on{" "}
+              {formatSyncedTimestamp(activeTx.previouslySyncedAt)}. Edits will
+              create a new expense when re-sent.
+            </p>
+          )}
+          {canEditDescription && (
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor={`sync-desc-${activeTx.id}`}
+                className="text-xs font-medium text-muted-foreground shrink-0"
+              >
+                Splitwise description
+              </label>
+              <Input
+                id={`sync-desc-${activeTx.id}`}
+                value={
+                  activeTx.syncDescriptionOverride ??
+                  getDefaultSplitwiseDescription(activeTx)
+                }
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const defaultDesc = getDefaultSplitwiseDescription(activeTx);
+                  updateTransaction(activeTx.id, {
+                    syncDescriptionOverride:
+                      value === defaultDesc ? undefined : value,
+                  });
+                }}
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+                className="h-8 text-xs flex-1 min-w-0"
+              />
+              {hasDescriptionOverride(activeTx) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    updateTransaction(activeTx.id, {
+                      syncDescriptionOverride: undefined,
+                    });
+                  }}
+                >
+                  Reset
+                </Button>
+              )}
+            </div>
+          )}
+          {canEditShares && activeGroup && (
+            <ShareEditor
+              members={activeGroup.members}
+              selectedUserIds={activeTx.selectedUserIds}
+              userShares={activeTx.userShares ?? defaultUserShareMap(activeTx.selectedUserIds)}
+              onChange={(userShares) =>
+                updateTransaction(activeTx.id, { userShares })
+              }
+            />
           )}
         </div>
       )}
 
-      {useVirtual ? (
-        <div
-          ref={parentRef}
-          className="h-[calc(100vh-280px)] overflow-auto"
-        >
-          <div
-            style={{
-              height: virtualizer.getTotalSize(),
-              position: "relative",
-            }}
-          >
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const tx = filtered[virtualRow.index];
-              return (
-                <div
-                  key={tx.id}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  {renderRow(tx, virtualRow.index)}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        <div className="max-h-[calc(100vh-280px)] overflow-auto">
-          {filtered.map((tx, index) => renderRow(tx, index))}
-        </div>
-      )}
+      <div>
+        {filtered.map((tx, index) => renderRow(tx, index))}
+      </div>
 
-      <p className="text-xs text-zinc-400 px-3">
+      <p className="text-xs text-muted-foreground px-3">
         Keyboard: ↑/↓ or J/K navigate · Space toggle selector · Tab switch
-        selector · Enter sync · Delete ignore
+        selector · Enter send · Delete ignore · Use Edit on posted rows to
+        update and re-send
       </p>
     </div>
   );

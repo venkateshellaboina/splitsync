@@ -2,6 +2,7 @@ export type CardProvider =
   | "CHASE_CREDIT"
   | "AMEX_CREDIT"
   | "CAPITAL_ONE_CREDIT"
+  | "APPLE_CARD"
   | "CUSTOM_GENERIC";
 
 export interface RawTransactionRow {
@@ -25,8 +26,12 @@ export interface NormalizedTransaction {
   category?: string;
   selectedGroupId: string | null;
   selectedUserIds: string[];
+  /** Share weights per selected member. Defaults to 1 each. */
+  userShares?: Record<string, number>;
   /** When set, used as the Splitwise expense description instead of the default. */
   syncDescriptionOverride?: string;
+  /** Set when a synced transaction is reopened for editing. */
+  previouslySyncedAt?: string;
   errorMessage?: string;
 }
 
@@ -65,5 +70,6 @@ export interface SyncExpensePayload {
   description: string;
   groupId: string;
   userIds: number[];
+  userShares?: number[];
   payerId: number;
 }

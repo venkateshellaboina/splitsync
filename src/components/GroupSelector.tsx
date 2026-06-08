@@ -44,7 +44,7 @@ export function GroupSelector({
         disabled={disabled}
         onClick={() => setOpen(!isOpen)}
         className={cn(
-          "flex h-8 w-full items-center justify-between rounded-md border border-zinc-200 bg-white px-2 text-xs",
+          "flex h-8 w-full items-center justify-between rounded-md border border-border bg-card px-2 text-xs",
           disabled && "opacity-50 cursor-not-allowed"
         )}
       >
@@ -55,13 +55,14 @@ export function GroupSelector({
       </button>
 
       {isOpen && !disabled && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-zinc-200 bg-white shadow-lg">
-          <div className="p-2 border-b">
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-card shadow-lg">
+          <div className="p-2 border-b border-border">
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400" />
+              <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.stopPropagation()}
                 placeholder="Search groups..."
                 className="h-7 pl-7 text-xs"
                 autoFocus
@@ -70,15 +71,15 @@ export function GroupSelector({
           </div>
           <ul className="max-h-48 overflow-auto py-1">
             {filtered.length === 0 ? (
-              <li className="px-3 py-2 text-xs text-zinc-400">No groups found</li>
+              <li className="px-3 py-2 text-xs text-muted-foreground">No groups found</li>
             ) : (
               filtered.map((group) => (
                 <li key={group.id}>
                   <button
                     type="button"
                     className={cn(
-                      "w-full px-3 py-1.5 text-left text-xs hover:bg-zinc-100",
-                      value === group.id.toString() && "bg-zinc-50 font-medium"
+                      "w-full px-3 py-1.5 text-left text-xs hover:bg-accent",
+                      value === group.id.toString() && "bg-muted font-medium"
                     )}
                     onClick={() => {
                       onChange(group.id.toString());

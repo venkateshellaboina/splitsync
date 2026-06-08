@@ -29,7 +29,7 @@ export function SettingsPanel() {
     <div className="space-y-8 max-w-2xl">
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Splitwise Credentials</h2>
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-muted-foreground">
           Enter your Splitwise Personal Access Token. It is stored locally in
           your browser and never committed to source control.
         </p>
@@ -48,7 +48,7 @@ export function SettingsPanel() {
               <button
                 type="button"
                 onClick={() => setShowToken(!showToken)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
                 {showToken ? (
                   <EyeOff className="h-4 w-4" />
@@ -74,24 +74,24 @@ export function SettingsPanel() {
             Refresh Groups
           </Button>
           {token && (
-            <span className="text-sm text-zinc-500">
+            <span className="text-sm text-muted-foreground">
               {groups.length} group{groups.length !== 1 ? "s" : ""} loaded
             </span>
           )}
         </div>
         {groupsError && (
-          <p className="text-sm text-red-600">{groupsError}</p>
+          <p className="text-sm text-danger-foreground">{groupsError}</p>
         )}
       </section>
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Synced Transactions</h2>
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-muted-foreground">
           Successfully synced transactions are remembered locally so re-uploading
           the same CSV won&apos;t prompt you to sync them again.
         </p>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-zinc-600">
+          <span className="text-sm text-muted-foreground">
             {syncedCount} transaction{syncedCount !== 1 ? "s" : ""} in history
           </span>
           {syncedCount > 0 && (
@@ -111,20 +111,20 @@ export function SettingsPanel() {
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Automation Rules</h2>
-        <p className="text-sm text-zinc-500">
+        <p className="text-sm text-muted-foreground">
           Built-in: grocery transactions auto-assign to Parksiders (Venky, Sai
           Deepak, Prateek). Saved rules below are applied when you sync a
           transaction.
         </p>
         {ruleEntries.length === 0 ? (
-          <p className="text-sm text-zinc-400 italic">No rules saved yet.</p>
+          <p className="text-sm text-muted-foreground italic">No rules saved yet.</p>
         ) : (
-          <div className="rounded-md border border-zinc-200 divide-y">
+          <div className="rounded-md border border-border divide-y divide-border">
             {ruleEntries.map(([keyword, rule]) => (
               <div key={keyword} className="px-4 py-3 text-sm">
                 <span className="font-medium">{keyword}</span>
-                <span className="text-zinc-400 mx-2">→</span>
-                <span className="text-zinc-600">
+                <span className="text-muted-foreground mx-2">→</span>
+                <span className="text-muted-foreground">
                   Group {rule.groupId}, {rule.userIds.length} member
                   {rule.userIds.length !== 1 ? "s" : ""}
                 </span>

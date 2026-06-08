@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Loader2, UploadCloud } from "lucide-react";
+import { Loader2, SendHorizontal } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,24 +50,24 @@ export function BulkSyncButton() {
         {isSyncing ? (
           <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
-          <UploadCloud className="h-4 w-4" />
+          <SendHorizontal className="h-4 w-4" />
         )}
         {isSyncing
           ? progress
             ? progress.completed > 0
-              ? `Synced ${progress.completed}/${progress.total}…`
-              : `Syncing ${progress.total} transactions…`
-            : "Syncing…"
-          : `Bulk Sync${syncableCount > 0 ? ` (${syncableCount})` : ""}`}
+              ? `Added ${progress.completed}/${progress.total}…`
+              : `Adding ${progress.total} transactions…`
+            : "Adding…"
+          : `Bulk Add${syncableCount > 0 ? ` (${syncableCount})` : ""}`}
       </Button>
       {progress && isSyncing && (
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-muted-foreground">
           {progress.succeeded} ok · {progress.failed} failed
         </span>
       )}
       {progress && !isSyncing && progress.completed > 0 && (
-        <span className="text-xs text-zinc-500">
-          Done — {progress.succeeded} synced
+        <span className="text-xs text-muted-foreground">
+          Done — {progress.succeeded} added
           {progress.failed > 0 ? `, ${progress.failed} failed` : ""}
         </span>
       )}
