@@ -1,6 +1,6 @@
 # SplitSync
 
-Turn credit card statement CSVs into Splitwise expense splits — fast. Upload a statement, assign groups and members, and add expenses in bulk.
+Turn credit card statement CSVs into Splitwise expense splits — fast. Upload one or more statements, assign groups and members, and add expenses in bulk.
 
 All transaction data stays in your browser. Your Splitwise token is stored in `localStorage` only and is **never** committed to this repository.
 
@@ -49,13 +49,13 @@ After saving, groups and members load automatically. Use **Refresh Groups** if n
 
 ### Step 1 — Upload a CSV
 
-Click **Upload CSV** on the **Ledger** tab. Export a statement from your bank (Chase, Amex, Capital One, etc.).
+Click **Upload CSVs** on the **Ledger** tab. You can select one CSV or multiple statements at once from supported banks such as Chase, Amex, Capital One, Apple Card, and Wells Fargo.
 
 The parser auto-detects columns and bank format. You'll see a summary like:
 
-> Loaded 105 transactions (Capital One) · 12 already synced
+> Loaded 105 transactions from 2 CSVs (Capital One, Wells Fargo) · 12 already synced
 
-Use **Add Manual** to add one-off transactions that are missing from the CSV. Manual transactions appear in the ledger like imported rows and can be assigned, split, ignored, or synced normally.
+Use **New Transaction** to add one-off transactions that are missing from the CSV. Manual transactions appear in the ledger like imported rows and can be assigned, split, ignored, or synced normally.
 
 ### Step 2 — Review the ledger
 
@@ -69,7 +69,7 @@ Each row shows:
 | **Group** | Splitwise group to charge |
 | **Members** | Who to split with |
 
-**Built-in rule:** Grocery transactions (Instacart, Costco, etc.) auto-assign to the **Parksiders** group with Venky, Sai Deepak, and Prateek — when that group exists in your Splitwise account.
+**Grocery rule:** Configure grocery auto-assignment in the **Configuration** tab. Choose your own Splitwise group, members, and grocery keywords so each user can map groceries to the right household or roommate group.
 
 **Saved rules:** When you sync a transaction, the merchant keyword is remembered for future CSV uploads.
 
@@ -82,7 +82,7 @@ Select a row to reveal extra options:
 - **Shares** — Set per-person share weights on the active row (e.g. A takes 2, B takes 1). Amounts split proportionally.
 - **Reset** — Restore the default Splitwise description.
 
-Rows with a custom description show a blue **Sync:** line under the merchant name.
+Rows with a custom description show a blue **Sync:** line under the merchant name. Navigating between assignable rows opens the group selector directly so keyboard review starts at the next decision point.
 
 ### Step 4 — Add to Splitwise
 
@@ -107,9 +107,10 @@ Rows with a custom description show a blue **Sync:** line under the merchant nam
 | **Amex** | `Date`, `Description`, `Amount` | Positive = expense, negative = credit |
 | **Capital One** | `Transaction Date`, `Description`, `Debit`, `Credit` | Debit = expense, Credit = payment/refund |
 | **Apple Card** | `Transaction Date`, `Clearing Date`, `Description`, `Merchant`, `Amount (USD)`, `Purchased By` | Positive = expense, negative = payment/refund |
+| **Wells Fargo** | `DATE`, `DESCRIPTION`, `AMOUNT`, `CHECK #`, `STATUS` | Negative = expense, positive = payment/refund |
 | **Other** | Auto-detected (`date`, `description`, `amount`, etc.) | Flexible matching |
 
-The parser skips preamble rows (account summaries) and finds the real header line automatically.
+The parser skips preamble rows (account summaries), finds the real header line automatically, and combines rows when multiple CSVs are selected together.
 
 ---
 
@@ -117,8 +118,8 @@ The parser skips preamble rows (account summaries) and finds the real header lin
 
 | Key | Action |
 |-----|--------|
-| `↓` / `J` | Next row |
-| `↑` / `K` | Previous row |
+| `↓` / `J` | Next row and open the group selector |
+| `↑` / `K` | Previous row and open the group selector |
 | `Space` | Open/close group or member selector |
 | `Tab` | Switch between group and member selector |
 | `Enter` | Sync active row |
@@ -132,9 +133,9 @@ The parser skips preamble rows (account summaries) and finds the real header lin
 |---------|--------------|
 | **Splitwise Credentials** | Save token, refresh groups |
 | **Synced Transactions** | History of successfully synced items (prevents double-sync on re-upload). **Clear history** resets this. |
-| **Automation Rules** | Merchant → group/member mappings saved from past syncs |
+| **Automation Rules** | Grocery auto-assignment config plus merchant -> group/member mappings saved from past syncs |
 
-Sync history matches transactions by **date + amount + merchant description**.
+Sync history matches transactions by **date + amount + merchant description**. Grocery settings, saved merchant rules, sync history, and the token all stay local to your browser.
 
 ---
 
@@ -144,7 +145,7 @@ Sync history matches transactions by **date + amount + merchant description**.
 |------|----------------|
 | Credit card transactions | Browser memory only (cleared on refresh) |
 | Splitwise token | `localStorage` in your browser |
-| Sync history & rules | `localStorage` in your browser |
+| Sync history, grocery settings & rules | `localStorage` in your browser |
 | Nothing | Server database (none exists) |
 
 API routes (`/api/splitwise/*`) only proxy requests to Splitwise using the token you send from the browser. No secrets are in this codebase.
@@ -188,7 +189,7 @@ npm run lint     # ESLint
 | **Loaded 0 transactions** | Check the amber error under the upload button for detected columns. Ensure the CSV has date, description, and amount/debit/credit columns. |
 | **Groups not loading** | Verify token in Configuration. Click **Refresh Groups**. |
 | **Rate limit errors** | Wait 5 seconds and retry. Bulk sync retries automatically. |
-| **Grocery rule not applying** | Ensure a Splitwise group name contains "Parksiders" and members Venky, Sai Deepak, Prateek exist in that group. |
+| **Grocery rule not applying** | Open Configuration -> Automation Rules, enable grocery auto-assignment, choose a group and at least one member, then save. Also confirm the transaction description or category contains one of your grocery keywords. |
 | **Transaction synced twice** | Sync history should prevent this. Check **Synced Transactions** in Configuration. |
 
 ---
