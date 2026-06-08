@@ -66,6 +66,14 @@ export interface AutomationRules {
   [merchantKeyword: string]: AutomationRule;
 }
 
+export interface GroceryRuleConfig {
+  enabled: boolean;
+  groupId: string | null;
+  userIds: string[];
+  descriptionKeywords: string[];
+  categoryKeywords: string[];
+}
+
 export interface SyncExpensePayload {
   amount: number;
   description: string;
