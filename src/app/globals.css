@@ -63,6 +63,104 @@
   --font-mono: var(--font-geist-mono);
 }
 
+@layer utilities {
+  .bg-background {
+    background-color: var(--background);
+  }
+
+  .bg-card {
+    background-color: var(--card);
+  }
+
+  .bg-muted {
+    background-color: var(--muted);
+  }
+
+  .bg-accent {
+    background-color: var(--accent);
+  }
+
+  .bg-input {
+    background-color: var(--input);
+  }
+
+  .bg-primary {
+    background-color: var(--primary);
+  }
+
+  .bg-success {
+    background-color: var(--success);
+  }
+
+  .bg-success\/60 {
+    background-color: color-mix(in srgb, var(--success) 60%, transparent);
+  }
+
+  .bg-warning {
+    background-color: var(--warning);
+  }
+
+  .bg-danger {
+    background-color: var(--danger);
+  }
+
+  .bg-danger\/60 {
+    background-color: color-mix(in srgb, var(--danger) 60%, transparent);
+  }
+
+  .text-foreground {
+    color: var(--foreground);
+  }
+
+  .text-muted-foreground {
+    color: var(--muted-foreground);
+  }
+
+  .text-primary-foreground {
+    color: var(--primary-foreground);
+  }
+
+  .text-success-foreground {
+    color: var(--success-foreground);
+  }
+
+  .text-warning-foreground {
+    color: var(--warning-foreground);
+  }
+
+  .text-danger-foreground {
+    color: var(--danger-foreground);
+  }
+
+  .border-border {
+    border-color: var(--border);
+  }
+
+  .placeholder\:text-muted-foreground::placeholder {
+    color: var(--muted-foreground);
+  }
+
+  .hover\:bg-accent:hover {
+    background-color: var(--accent);
+  }
+
+  .hover\:text-foreground:hover {
+    color: var(--foreground);
+  }
+
+  .data-\[state\=active\]\:bg-card[data-state="active"] {
+    background-color: var(--card);
+  }
+
+  .data-\[state\=checked\]\:bg-primary[data-state="checked"] {
+    background-color: var(--primary);
+  }
+
+  .data-\[state\=checked\]\:text-primary-foreground[data-state="checked"] {
+    color: var(--primary-foreground);
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

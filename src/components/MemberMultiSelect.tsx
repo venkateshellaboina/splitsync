@@ -99,7 +99,7 @@ export function MemberMultiSelect({
       </button>
 
       {isOpen && !disabled && members.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full min-w-[200px] rounded-md border border-border bg-card shadow-lg">
+        <div className="absolute z-[100] mt-1 w-full min-w-[200px] rounded-md border border-border bg-card shadow-xl">
           <div className="p-2 border-b border-border">
             <div className="relative">
               <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />

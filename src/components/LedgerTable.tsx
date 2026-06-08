@@ -311,8 +311,10 @@ export function LedgerTable({
           else rowRefs.current.delete(index);
         }}
         className={cn(
-          "grid grid-cols-[100px_1fr_100px_160px_160px_80px] gap-2 items-center px-3 border-b border-border text-sm",
-          isActive && "outline outline-2 outline-ring outline-offset-[-2px]",
+          "relative grid grid-cols-[100px_1fr_100px_160px_160px_80px] gap-2 items-center px-3 border-b border-border bg-background text-sm",
+          isActive
+            ? "z-20 outline outline-2 outline-ring outline-offset-[-2px]"
+            : "z-0",
           (tx.status === "SUCCESS" || tx.previouslySyncedAt) && "bg-success/60",
           tx.status === "IGNORED" && "opacity-40 line-through",
           tx.status === "SYNCING" && "animate-pulse",

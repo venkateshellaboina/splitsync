@@ -55,6 +55,8 @@ The parser auto-detects columns and bank format. You'll see a summary like:
 
 > Loaded 105 transactions (Capital One) · 12 already synced
 
+Use **Add Manual** to add one-off transactions that are missing from the CSV. Manual transactions appear in the ledger like imported rows and can be assigned, split, ignored, or synced normally.
+
 ### Step 2 — Review the ledger
 
 Each row shows:

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { BulkSyncButton } from "@/components/BulkSyncButton";
 import { CsvUpload } from "@/components/CsvUpload";
 import { LedgerTable } from "@/components/LedgerTable";
+import { ManualTransactionForm } from "@/components/ManualTransactionForm";
 import { SettingsPanel } from "@/components/SettingsPanel";
 
 export function ViewTabs() {
@@ -39,7 +40,10 @@ export function ViewTabs() {
           <TabsTrigger value="config">Configuration</TabsTrigger>
         </TabsList>
 
-        <CsvUpload />
+        <div className="flex items-center gap-2">
+          <ManualTransactionForm />
+          <CsvUpload />
+        </div>
       </div>
 
       <TabsContent value="ledger" className="space-y-4">
