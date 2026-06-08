@@ -9,6 +9,7 @@ export interface SyncedRecord {
   rawDescription: string;
   groupId: string;
   userIds: string[];
+  userShares?: Record<string, number>;
   syncedAt: string;
 }
 
@@ -45,10 +46,46 @@ export function isTransactionSynced(
   return transactionFingerprint(tx) in history;
 }
 
+export function getSyncedRecord(
+  tx: Pick<NormalizedTransaction, "date" | "amount" | "rawDescription">
+): SyncedRecord | null {
+  const history = getSyncedHistory();
+  return history[transactionFingerprint(tx)] ?? null;
+}
+
+export function formatSyncedTimestamp(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+export function removeFromSyncedHistory(
+  tx: Pick<NormalizedTransaction, "date" | "amount" | "rawDescription">
+): void {
+  const fingerprint = transactionFingerprint(tx);
+  const history = getSyncedHistory();
+  if (!(fingerprint in history)) return;
+
+  delete history[fingerprint];
+  setSyncedHistory(history);
+}
+
 export function markAsSynced(
   tx: Pick<
     NormalizedTransaction,
-    "date" | "amount" | "rawDescription" | "selectedGroupId" | "selectedUserIds"
+    | "date"
+    | "amount"
+    | "rawDescription"
+    | "selectedGroupId"
+    | "selectedUserIds"
+    | "userShares"
   >
 ): void {
   const fingerprint = transactionFingerprint(tx);
@@ -61,6 +98,7 @@ export function markAsSynced(
     rawDescription: tx.rawDescription,
     groupId: tx.selectedGroupId ?? "",
     userIds: [...tx.selectedUserIds],
+    ...(tx.userShares ? { userShares: { ...tx.userShares } } : {}),
     syncedAt: new Date().toISOString(),
   };
 
@@ -82,6 +120,7 @@ export function applySyncedHistory(
       selectedGroupId: record.groupId || tx.selectedGroupId,
       selectedUserIds:
         record.userIds.length > 0 ? record.userIds : tx.selectedUserIds,
+      userShares: record.userShares ?? tx.userShares,
       errorMessage: undefined,
     };
   });

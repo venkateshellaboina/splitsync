@@ -1,6 +1,6 @@
 # SplitSync
 
-Turn credit card statement CSVs into Splitwise expense splits — fast. Upload a statement, assign groups and members, and sync in bulk.
+Turn credit card statement CSVs into Splitwise expense splits — fast. Upload a statement, assign groups and members, and add expenses in bulk.
 
 All transaction data stays in your browser. Your Splitwise token is stored in `localStorage` only and is **never** committed to this repository.
 
@@ -49,7 +49,7 @@ After saving, groups and members load automatically. Use **Refresh Groups** if n
 
 ### Step 1 — Upload a CSV
 
-Click **Upload CSV** on the **Active Ledger** tab. Export a statement from your bank (Chase, Amex, Capital One, etc.).
+Click **Upload CSV** on the **Ledger** tab. Export a statement from your bank (Chase, Amex, Capital One, etc.).
 
 The parser auto-detects columns and bank format. You'll see a summary like:
 
@@ -77,21 +77,22 @@ Select a row to reveal extra options:
 
 - **Splitwise description** — Edit the name sent to Splitwise. Default format: `2026-06-05 — MERCHANT NAME`. The card date is in the description only; the expense is **not** backdated (recorded at sync time).
 - **Members** — Use **Select all** / **Deselect all** in the members dropdown.
+- **Shares** — Set per-person share weights on the active row (e.g. A takes 2, B takes 1). Amounts split proportionally.
 - **Reset** — Restore the default Splitwise description.
 
 Rows with a custom description show a blue **Sync:** line under the merchant name.
 
-### Step 4 — Sync to Splitwise
+### Step 4 — Add to Splitwise
 
-**Single row:** Click the upload icon on the row, or press **Enter** while the row is selected.
+**Single row:** Click the send icon on the row, or press **Enter** while the row is selected.
 
-**Bulk sync:** Click **Bulk Sync (N)** to sync all ready rows. The server processes them **one at a time** to avoid rate limits. Rows pulse while syncing; successes turn green.
+**Bulk add:** Click **Bulk Add (N)** to send all ready rows. The server processes them **one at a time** to avoid rate limits. Rows pulse while adding; successes turn green.
 
 ### Step 5 — Handle the rest
 
 - **Ignore** — Click ✕ or press **Delete** to skip a row.
-- **Refunds** — Payments and credits appear on the **Refunds** tab (not auto-synced).
-- **Show processed items** — Toggle to see already-synced or ignored rows.
+- **Refunds** — Payments and credits appear inline in the ledger with a **Refund** badge (not auto-synced). Click ✕ to ignore them.
+- **Show processed items** — Toggle to see already-posted or ignored rows. Use **Edit** (pencil) on posted rows to change group, members, or description and re-send. A **Posted** badge and prior post time stay visible while editing. Use **Restore** on ignored rows to bring them back.
 
 ---
 
@@ -100,8 +101,10 @@ Rows with a custom description show a blue **Sync:** line under the merchant nam
 | Bank | Key columns | Amount logic |
 |------|-------------|--------------|
 | **Chase** | `Transaction Date`, `Description`, `Amount` | Negative = expense, positive = credit |
+| **Chase activity** | `Date`, `Description`, `Amount` (e.g. `activity.csv`) | Positive = expense, negative = credit |
 | **Amex** | `Date`, `Description`, `Amount` | Positive = expense, negative = credit |
 | **Capital One** | `Transaction Date`, `Description`, `Debit`, `Credit` | Debit = expense, Credit = payment/refund |
+| **Apple Card** | `Transaction Date`, `Clearing Date`, `Description`, `Merchant`, `Amount (USD)`, `Purchased By` | Positive = expense, negative = payment/refund |
 | **Other** | Auto-detected (`date`, `description`, `amount`, etc.) | Flexible matching |
 
 The parser skips preamble rows (account summaries) and finds the real header line automatically.

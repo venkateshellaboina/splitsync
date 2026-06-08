@@ -23,8 +23,9 @@ export async function POST(request: NextRequest) {
   const { amount, description, groupId, userIds, payerId } = body;
 
   if (
-    !amount ||
-    !description ||
+    typeof amount !== "number" ||
+    amount <= 0 ||
+    !description?.trim() ||
     !groupId ||
     !userIds?.length ||
     !payerId

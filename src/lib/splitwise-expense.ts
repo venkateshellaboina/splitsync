@@ -10,6 +10,7 @@ export interface SyncExpenseInput {
   description: string;
   groupId: string;
   userIds: number[];
+  userShares?: number[];
   payerId: number;
 }
 
@@ -26,13 +27,47 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Splitwise returns `errors: {}` on success — only treat non-empty errors as failure. */
+function extractSplitwiseError(data: Record<string, unknown>): string | null {
+  const errors = data.errors;
+  if (errors == null) return null;
+
+  if (Array.isArray(errors)) {
+    return errors.length > 0 ? String(errors[0]) : null;
+  }
+
+  if (typeof errors !== "object") {
+    return String(errors);
+  }
+
+  const record = errors as Record<string, unknown>;
+  const entries = Object.entries(record);
+  if (entries.length === 0) return null;
+
+  for (const [, value] of entries) {
+    if (Array.isArray(value) && value.length > 0) {
+      return String(value[0]);
+    }
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+
+  return JSON.stringify(errors);
+}
+
 export async function createSplitwiseExpense(
   authHeader: string,
   input: SyncExpenseInput
 ): Promise<SyncExpenseResult> {
-  const { amount, description, groupId, userIds, payerId } = input;
+  const { amount, description, groupId, userIds, userShares, payerId } = input;
 
-  const usersPayload = buildUsersPayload(amount, userIds, payerId);
+  const usersPayload = buildUsersPayload(
+    amount,
+    userIds,
+    payerId,
+    userShares
+  );
   // Omit `date` so Splitwise records the expense at sync time, not the card date.
   const formBody = toFormUrlEncoded({
     cost: amount.toFixed(2),
@@ -64,17 +99,32 @@ export async function createSplitwiseExpense(
         };
       }
 
-      const data = await response.json();
+      const data = (await response.json()) as Record<string, unknown>;
 
-      if (!response.ok) {
-        const errorMsg =
-          data?.errors?.base?.[0] ??
-          data?.error ??
-          `Splitwise API error (${response.status})`;
+      const errorMsg = extractSplitwiseError(data);
+      if (errorMsg) {
         return { success: false, error: errorMsg };
       }
 
-      return { success: true, expense: data.expenses?.[0] };
+      if (!response.ok) {
+        return {
+          success: false,
+          error:
+            (typeof data.error === "string" ? data.error : null) ??
+            `Splitwise API error (${response.status})`,
+        };
+      }
+
+      const expenses = data.expenses;
+      const expense = Array.isArray(expenses) ? expenses[0] : undefined;
+      if (!expense) {
+        return {
+          success: false,
+          error: "Splitwise accepted the request but returned no expense",
+        };
+      }
+
+      return { success: true, expense };
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return { success: false, error: message };

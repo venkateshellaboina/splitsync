@@ -68,6 +68,7 @@ function applyProviderAmountLogic(
         isRefund: amountVal > 0,
       };
     case "AMEX_CREDIT":
+    case "APPLE_CARD":
       return {
         amount: Math.abs(amountVal),
         isRefund: amountVal < 0,

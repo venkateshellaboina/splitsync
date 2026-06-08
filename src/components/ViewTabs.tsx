@@ -31,7 +31,7 @@ export function ViewTabs() {
           <TabsTrigger value="ledger">
             Ledger
             {pendingCount > 0 && (
-              <span className="ml-1.5 rounded-full bg-zinc-200 px-1.5 py-0.5 text-xs">
+              <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs">
                 {pendingCount}
               </span>
             )}

@@ -8,6 +8,7 @@ function formatProvider(provider: string): string {
     CHASE_CREDIT: "Chase",
     AMEX_CREDIT: "Amex",
     CAPITAL_ONE_CREDIT: "Capital One",
+    APPLE_CARD: "Apple Card",
     CUSTOM_GENERIC: "Generic",
   };
   return labels[provider as CardProvider] ?? provider.replace(/_/g, " ");
@@ -76,7 +77,7 @@ export function CsvUpload() {
         {isParsing ? "Parsing..." : "Upload CSV"}
       </Button>
       {lastResult && (
-        <div className="text-sm text-zinc-500">
+        <div className="text-sm text-muted-foreground">
           <span>
             Loaded {lastResult.count} transactions (
             {formatProvider(lastResult.provider)})
@@ -86,7 +87,7 @@ export function CsvUpload() {
               ` · ${lastResult.errors.length} issue${lastResult.errors.length !== 1 ? "s" : ""}`}
           </span>
           {lastResult.count === 0 && lastResult.errors.length > 0 && (
-            <p className="text-xs text-amber-700 mt-1 max-w-xl">
+            <p className="text-xs text-warning-foreground mt-1 max-w-xl">
               {lastResult.errors[0]}
             </p>
           )}

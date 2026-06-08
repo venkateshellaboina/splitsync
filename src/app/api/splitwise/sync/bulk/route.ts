@@ -30,8 +30,9 @@ export async function POST(request: NextRequest) {
 
   for (const expense of expenses) {
     if (
-      !expense.amount ||
-      !expense.description ||
+      typeof expense.amount !== "number" ||
+      expense.amount <= 0 ||
+      !expense.description?.trim() ||
       !expense.groupId ||
       !expense.userIds?.length ||
       !expense.payerId

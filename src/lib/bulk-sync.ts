@@ -2,6 +2,7 @@ import type { NormalizedTransaction } from "@/types";
 import { extractMerchantKeyword } from "@/lib/rules";
 import { getStoredToken, saveOrUpdateRule } from "@/lib/storage";
 import { getSplitwiseDescription } from "@/lib/splitwise-description";
+import { getUserShareWeights } from "@/lib/user-shares";
 import { isTransactionSynced, markAsSynced } from "@/lib/synced-history";
 
 export interface BulkSyncProgress {
@@ -69,6 +70,7 @@ export async function runBulkSync(
         description: getSplitwiseDescription(tx),
         groupId: tx.selectedGroupId,
         userIds: tx.selectedUserIds.map(Number),
+        userShares: getUserShareWeights(tx.selectedUserIds, tx.userShares),
         payerId,
       })),
     }),
@@ -106,6 +108,7 @@ export async function runBulkSync(
       markAsSynced(tx);
       callbacks.onTransactionUpdate(tx.id, {
         status: "SUCCESS",
+        previouslySyncedAt: undefined,
         errorMessage: undefined,
       });
     } else {

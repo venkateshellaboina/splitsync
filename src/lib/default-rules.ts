@@ -1,4 +1,5 @@
 import type { NormalizedTransaction, SplitwiseGroup } from "@/types";
+import { defaultUserShareMap } from "@/lib/user-shares";
 import { memberDisplayName } from "@/lib/utils";
 
 const PARKSIDERS_GROUP_NAME = "parksiders";
@@ -113,10 +114,12 @@ export function applyDefaultRules(
     if (tx.status !== "UNASSIGNED" || tx.selectedGroupId) return tx;
     if (!isGroceryTransaction(tx)) return tx;
 
+    const selectedUserIds = [...parksiders.userIds];
     return {
       ...tx,
       selectedGroupId: parksiders.groupId,
-      selectedUserIds: [...parksiders.userIds],
+      selectedUserIds,
+      userShares: defaultUserShareMap(selectedUserIds),
       status: "READY",
     };
   });
