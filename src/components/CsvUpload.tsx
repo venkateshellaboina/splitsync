@@ -9,6 +9,7 @@ function formatProvider(provider: string): string {
     AMEX_CREDIT: "Amex",
     CAPITAL_ONE_CREDIT: "Capital One",
     APPLE_CARD: "Apple Card",
+    WELLS_FARGO_CREDIT: "Wells Fargo",
     CUSTOM_GENERIC: "Generic",
   };
   return labels[provider as CardProvider] ?? provider.replace(/_/g, " ");

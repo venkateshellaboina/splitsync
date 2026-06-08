@@ -3,6 +3,7 @@ export type CardProvider =
   | "AMEX_CREDIT"
   | "CAPITAL_ONE_CREDIT"
   | "APPLE_CARD"
+  | "WELLS_FARGO_CREDIT"
   | "CUSTOM_GENERIC";
 
 export interface RawTransactionRow {

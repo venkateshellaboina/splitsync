@@ -63,6 +63,7 @@ function applyProviderAmountLogic(
 ): { amount: number; isRefund: boolean } {
   switch (provider) {
     case "CHASE_CREDIT":
+    case "WELLS_FARGO_CREDIT":
       return {
         amount: Math.abs(amountVal),
         isRefund: amountVal > 0,

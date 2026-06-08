@@ -19,6 +19,10 @@ function headerMatches(header: string, candidates: string[]): boolean {
   return candidates.some((c) => h === c || h.includes(c));
 }
 
+function hasHeader(headers: string[], candidates: string[]): boolean {
+  return headers.some((h) => headerMatches(h, candidates));
+}
+
 function findHeader(
   headers: string[],
   prefer: string[],
@@ -113,6 +117,13 @@ export function buildColumnMapping(headers: string[]): ColumnMapping | null {
     cleaned.some((h) => headerMatches(h, ["amount"]))
   ) {
     provider = "APPLE_CARD";
+  } else if (
+    dateLower === "date" &&
+    amountKey &&
+    hasHeader(cleaned, ["check #", "check number"]) &&
+    hasHeader(cleaned, ["status"])
+  ) {
+    provider = "WELLS_FARGO_CREDIT";
   } else if (
     hasDebitCredit &&
     dateLower.includes("transaction date") &&
