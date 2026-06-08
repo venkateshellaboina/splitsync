@@ -45,6 +45,16 @@ function statusForAssignment(
   return groupId && userIds.length > 0 ? "READY" : "UNASSIGNED";
 }
 
+function canOpenGroupSelector(tx: NormalizedTransaction | undefined): boolean {
+  return Boolean(
+    tx &&
+      !tx.isRefund &&
+      tx.status !== "SYNCING" &&
+      tx.status !== "SUCCESS" &&
+      tx.status !== "IGNORED"
+  );
+}
+
 export function LedgerTable({
   transactions,
   showProcessed,
@@ -79,6 +89,18 @@ export function LedgerTable({
       });
     });
   }, []);
+
+  const navigateToIndex = useCallback(
+    (index: number) => {
+      const next = Math.min(Math.max(index, 0), filtered.length - 1);
+      setActiveIndex(next);
+      setSelectorFocus("group");
+      setMemberOpen(false);
+      setGroupOpen(canOpenGroupSelector(filtered[next]));
+      scrollActiveRowIntoView(next);
+    },
+    [filtered, scrollActiveRowIntoView]
+  );
 
   const syncTransaction = useCallback(
     async (tx: NormalizedTransaction) => {
@@ -149,10 +171,10 @@ export function LedgerTable({
     (tx: NormalizedTransaction, index: number) => {
       updateTransaction(tx.id, { status: "IGNORED" });
       if (index < filtered.length - 1) {
-        setActiveIndex(index + 1);
+        navigateToIndex(index + 1);
       }
     },
-    [updateTransaction, filtered.length]
+    [updateTransaction, filtered.length, navigateToIndex]
   );
 
   const reopenTransaction = useCallback(
@@ -222,24 +244,12 @@ export function LedgerTable({
         case "ArrowDown":
         case "j":
           e.preventDefault();
-          setGroupOpen(false);
-          setMemberOpen(false);
-          setActiveIndex((i) => {
-            const next = Math.min(i + 1, filtered.length - 1);
-            scrollActiveRowIntoView(next);
-            return next;
-          });
+          navigateToIndex(safeActiveIndex + 1);
           break;
         case "ArrowUp":
         case "k":
           e.preventDefault();
-          setGroupOpen(false);
-          setMemberOpen(false);
-          setActiveIndex((i) => {
-            const next = Math.max(i - 1, 0);
-            scrollActiveRowIntoView(next);
-            return next;
-          });
+          navigateToIndex(safeActiveIndex - 1);
           break;
         case " ":
           e.preventDefault();
@@ -291,7 +301,7 @@ export function LedgerTable({
     selectorFocus,
     syncTransaction,
     ignoreTransaction,
-    scrollActiveRowIntoView,
+    navigateToIndex,
   ]);
 
   const renderRow = (tx: NormalizedTransaction, index: number) => {
@@ -321,9 +331,16 @@ export function LedgerTable({
           tx.status === "ERROR" && "bg-danger/60"
         )}
         style={{ height: ROW_HEIGHT }}
-        onClick={() => {
-          setActiveIndex(index);
-          scrollActiveRowIntoView(index);
+        onClick={(e) => {
+          const target = e.target as HTMLElement;
+          if (
+            target.closest(
+              "button, input, textarea, label, [role='checkbox']"
+            )
+          ) {
+            return;
+          }
+          navigateToIndex(index);
         }}
       >
         <span className="text-xs text-muted-foreground">{tx.date}</span>
@@ -373,10 +390,13 @@ export function LedgerTable({
               disabled={isReadOnly || tx.status === "IGNORED"}
               isOpen={isActive && selectorFocus === "group" && groupOpen}
               onOpenChange={(o) => {
-                if (isActive) {
-                  setGroupOpen(o);
-                  setSelectorFocus("group");
+                if (!isActive) {
+                  setActiveIndex(index);
+                  scrollActiveRowIntoView(index);
                 }
+                setSelectorFocus("group");
+                setMemberOpen(false);
+                setGroupOpen(o);
               }}
             />
             <MemberMultiSelect
@@ -390,10 +410,13 @@ export function LedgerTable({
               }
               isOpen={isActive && selectorFocus === "member" && memberOpen}
               onOpenChange={(o) => {
-                if (isActive) {
-                  setMemberOpen(o);
-                  setSelectorFocus("member");
+                if (!isActive) {
+                  setActiveIndex(index);
+                  scrollActiveRowIntoView(index);
                 }
+                setSelectorFocus("member");
+                setGroupOpen(false);
+                setMemberOpen(o);
               }}
             />
             <div className="flex justify-end gap-1">
