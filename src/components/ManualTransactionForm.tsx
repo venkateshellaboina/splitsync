@@ -74,7 +74,7 @@ export function ManualTransactionForm() {
         onClick={() => setIsOpen((open) => !open)}
       >
         <Plus className="h-4 w-4" />
-        Add Manual
+        New Transaction
       </Button>
 
       {isOpen && (
