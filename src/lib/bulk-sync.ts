@@ -17,6 +17,7 @@ export function getSyncableTransactions(
 ): NormalizedTransaction[] {
   return transactions.filter(
     (tx) =>
+      tx.selected === true &&
       !tx.isRefund &&
       tx.status !== "SUCCESS" &&
       tx.status !== "IGNORED" &&
@@ -122,4 +123,38 @@ export async function runBulkSync(
 
   callbacks.onProgress({ completed: total, total, succeeded, failed });
   return { succeeded, failed };
+}
+
+export async function runExampleBulkSync(
+  transactions: NormalizedTransaction[],
+  callbacks: BulkSyncCallbacks
+): Promise<{ succeeded: number; failed: number }> {
+  const syncable = getSyncableTransactions(transactions);
+  if (syncable.length === 0) {
+    return { succeeded: 0, failed: 0 };
+  }
+
+  const total = syncable.length;
+
+  for (const tx of syncable) {
+    callbacks.onTransactionUpdate(tx.id, {
+      status: "SYNCING",
+      errorMessage: undefined,
+    });
+  }
+  callbacks.onProgress({ completed: 0, total, succeeded: 0, failed: 0 });
+
+  let completed = 0;
+  for (const tx of syncable) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    completed++;
+    callbacks.onTransactionUpdate(tx.id, {
+      status: "SUCCESS",
+      previouslySyncedAt: undefined,
+      errorMessage: undefined,
+    });
+    callbacks.onProgress({ completed, total, succeeded: completed, failed: 0 });
+  }
+
+  return { succeeded: total, failed: 0 };
 }

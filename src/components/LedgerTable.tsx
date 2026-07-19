@@ -1,17 +1,34 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, Pencil, RotateCcw, Send, X } from "lucide-react";
-import type { NormalizedTransaction } from "@/types";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Check,
+  Loader2,
+  Pencil,
+  RotateCcw,
+  Send,
+  X,
+} from "lucide-react";
+import type {
+  NormalizedTransaction,
+  SplitwiseCurrentUser,
+  SplitwiseGroup,
+  SplitwiseMember,
+} from "@/types";
 import { useApp } from "@/context/AppContext";
+import { Checkbox } from "@/components/ui/checkbox";
 import { GroupSelector } from "@/components/GroupSelector";
 import { MemberMultiSelect } from "@/components/MemberMultiSelect";
 import { ShareEditor } from "@/components/ShareEditor";
+import { SyncSuccessPopup } from "@/components/SyncSuccessPopup";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn, formatCurrency } from "@/lib/utils";
 import { extractMerchantKeyword } from "@/lib/rules";
-import { saveOrUpdateRule, getStoredToken } from "@/lib/storage";
+import { getStoredToken, saveOrUpdateRule } from "@/lib/storage";
 import {
   getDefaultSplitwiseDescription,
   getSplitwiseDescription,
@@ -34,9 +51,28 @@ import {
 interface LedgerTableProps {
   transactions: NormalizedTransaction[];
   showProcessed: boolean;
+  /** Overrides the groups from AppContext — used to drive the example ledger with fake data. */
+  groups?: SplitwiseGroup[];
+  /** Overrides the current user from AppContext — used by the example ledger. */
+  currentUser?: SplitwiseCurrentUser | null;
+  /** Overrides the friends list from AppContext — used to pick members for "Non-group expenses". */
+  friends?: SplitwiseMember[];
+  /** Overrides AppContext's updateTransaction — lets the example ledger keep its state local. */
+  onUpdateTransaction?: (
+    id: string,
+    updates: Partial<NormalizedTransaction>
+  ) => void;
+  /** When set, "Send to Splitwise" never hits the network or real local storage. */
+  isExample?: boolean;
+  onExampleSend?: (tx: NormalizedTransaction) => void;
 }
 
 const ROW_HEIGHT = 52;
+const GRID_COLS =
+  "grid-cols-[28px_100px_1fr_100px_100px_160px_160px_80px]";
+
+type SortColumn = "date" | "description" | "amount" | "card";
+type SortDirection = "asc" | "desc";
 
 function statusForAssignment(
   groupId: string | null,
@@ -55,11 +91,49 @@ function canOpenGroupSelector(tx: NormalizedTransaction | undefined): boolean {
   );
 }
 
+/**
+ * Splitwise's "Non-group expenses" (id 0) only ever reports the current user
+ * as a "member" — the people you'd actually split with are your friends.
+ */
+function getSelectableMembers(
+  group: SplitwiseGroup | undefined,
+  friends: SplitwiseMember[],
+  currentUser: SplitwiseCurrentUser | null
+): SplitwiseMember[] {
+  if (!group) return [];
+  if (group.id !== 0) return group.members;
+
+  const byId = new Map<number, SplitwiseMember>();
+  if (currentUser) {
+    byId.set(currentUser.id, {
+      id: currentUser.id,
+      first_name: currentUser.first_name,
+      last_name: currentUser.last_name,
+      email: currentUser.email,
+    });
+  }
+  for (const friend of friends) {
+    byId.set(friend.id, friend);
+  }
+  return Array.from(byId.values());
+}
+
 export function LedgerTable({
   transactions,
   showProcessed,
+  groups: groupsProp,
+  currentUser: currentUserProp,
+  friends: friendsProp,
+  onUpdateTransaction,
+  isExample = false,
+  onExampleSend,
 }: LedgerTableProps) {
-  const { groups, currentUser, updateTransaction } = useApp();
+  const app = useApp();
+  const groups = groupsProp ?? app.groups;
+  const currentUser =
+    currentUserProp !== undefined ? currentUserProp : app.currentUser;
+  const friends = friendsProp ?? app.friends;
+  const updateTransaction = onUpdateTransaction ?? app.updateTransaction;
   const rowRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [activeIndex, setActiveIndex] = useState(0);
   const [groupOpen, setGroupOpen] = useState(false);
@@ -67,14 +141,61 @@ export function LedgerTable({
   const [selectorFocus, setSelectorFocus] = useState<"group" | "member">(
     "group"
   );
+  const [syncedPopup, setSyncedPopup] = useState<string | null>(null);
+  const [sort, setSort] = useState<{
+    column: SortColumn | null;
+    direction: SortDirection;
+  }>({ column: null, direction: "asc" });
+  const sortColumn = sort.column;
+  const sortDirection = sort.direction;
 
   const filtered = useMemo(() => {
-    return transactions.filter((tx) => {
+    const visible = transactions.filter((tx) => {
       if (!showProcessed && (tx.status === "IGNORED" || tx.status === "SUCCESS"))
         return false;
       return true;
     });
-  }, [transactions, showProcessed]);
+
+    if (!sortColumn) return visible;
+
+    const sorted = [...visible].sort((a, b) => {
+      let cmp = 0;
+      switch (sortColumn) {
+        case "date":
+          cmp = a.date.localeCompare(b.date);
+          break;
+        case "description":
+          cmp = a.description.localeCompare(b.description, undefined, {
+            sensitivity: "base",
+          });
+          break;
+        case "amount":
+          cmp = a.amount - b.amount;
+          break;
+        case "card":
+          cmp = (a.cardLabel ?? "").localeCompare(b.cardLabel ?? "", undefined, {
+            sensitivity: "base",
+          });
+          break;
+      }
+      return sortDirection === "asc" ? cmp : -cmp;
+    });
+
+    return sorted;
+  }, [transactions, showProcessed, sortColumn, sortDirection]);
+
+  const toggleSort = useCallback((column: SortColumn) => {
+    setSort((prev) => {
+      if (prev.column !== column) {
+        return { column, direction: "asc" };
+      }
+      if (prev.direction === "asc") {
+        return { column, direction: "desc" };
+      }
+      // Third click on the same column resets to the original, unsorted order.
+      return { column: null, direction: "asc" };
+    });
+  }, []);
 
   const safeActiveIndex = useMemo(
     () => Math.min(activeIndex, Math.max(0, filtered.length - 1)),
@@ -91,12 +212,13 @@ export function LedgerTable({
   }, []);
 
   const navigateToIndex = useCallback(
-    (index: number) => {
+    (index: number, options?: { openGroupSelector?: boolean }) => {
       const next = Math.min(Math.max(index, 0), filtered.length - 1);
+      const shouldOpenGroupSelector = options?.openGroupSelector ?? true;
       setActiveIndex(next);
       setSelectorFocus("group");
       setMemberOpen(false);
-      setGroupOpen(canOpenGroupSelector(filtered[next]));
+      setGroupOpen(shouldOpenGroupSelector && canOpenGroupSelector(filtered[next]));
       scrollActiveRowIntoView(next);
     },
     [filtered, scrollActiveRowIntoView]
@@ -106,6 +228,11 @@ export function LedgerTable({
     async (tx: NormalizedTransaction) => {
       if (!tx.selectedGroupId || tx.selectedUserIds.length === 0) return;
       if (!currentUser) return;
+
+      if (isExample) {
+        onExampleSend?.(tx);
+        return;
+      }
 
       if (isTransactionSynced(tx) || tx.status === "SUCCESS") {
         updateTransaction(tx.id, { status: "SUCCESS", errorMessage: undefined });
@@ -145,11 +272,7 @@ export function LedgerTable({
         }
 
         const keyword = extractMerchantKeyword(tx.rawDescription);
-        saveOrUpdateRule(
-          keyword,
-          tx.selectedGroupId,
-          tx.selectedUserIds
-        );
+        saveOrUpdateRule(keyword, tx.selectedGroupId, tx.selectedUserIds);
 
         markAsSynced(tx);
         updateTransaction(tx.id, {
@@ -157,6 +280,7 @@ export function LedgerTable({
           previouslySyncedAt: undefined,
           errorMessage: undefined,
         });
+        setSyncedPopup(`"${tx.description}" posted to Splitwise successfully! 🎉`);
       } catch (err) {
         updateTransaction(tx.id, {
           status: "ERROR",
@@ -164,7 +288,7 @@ export function LedgerTable({
         });
       }
     },
-    [currentUser, updateTransaction]
+    [currentUser, updateTransaction, isExample, onExampleSend]
   );
 
   const ignoreTransaction = useCallback(
@@ -179,6 +303,14 @@ export function LedgerTable({
 
   const reopenTransaction = useCallback(
     (tx: NormalizedTransaction) => {
+      if (isExample) {
+        updateTransaction(tx.id, {
+          status: statusForAssignment(tx.selectedGroupId, tx.selectedUserIds),
+          errorMessage: undefined,
+        });
+        return;
+      }
+
       const syncedRecord = getSyncedRecord(tx);
       removeFromSyncedHistory(tx);
       updateTransaction(tx.id, {
@@ -187,7 +319,7 @@ export function LedgerTable({
         errorMessage: undefined,
       });
     },
-    [updateTransaction]
+    [updateTransaction, isExample]
   );
 
   const restoreTransaction = useCallback(
@@ -200,30 +332,54 @@ export function LedgerTable({
     [updateTransaction]
   );
 
+  const getPropagationTargets = useCallback(
+    (tx: NormalizedTransaction) => {
+      const selectedCount = transactions.filter((t) => t.selected).length;
+      if (!tx.selected || selectedCount <= 1) return [tx];
+      return transactions.filter((t) => t.selected && !t.isRefund);
+    },
+    [transactions]
+  );
+
   const handleGroupChange = useCallback(
     (tx: NormalizedTransaction, groupId: string | null) => {
       const group = groups.find((g) => g.id.toString() === groupId);
       const memberIds = group
         ? group.members.map((m) => m.id.toString())
         : [];
+      const status = statusForAssignment(groupId, memberIds);
 
-      updateTransaction(tx.id, {
-        selectedGroupId: groupId,
-        selectedUserIds: memberIds,
-        userShares: defaultUserShareMap(memberIds),
-        status: statusForAssignment(groupId, memberIds),
-      });
+      for (const target of getPropagationTargets(tx)) {
+        updateTransaction(target.id, {
+          selectedGroupId: groupId,
+          selectedUserIds: memberIds,
+          userShares: defaultUserShareMap(memberIds),
+          status,
+          selected: status === "READY" ? true : target.selected,
+        });
+      }
     },
-    [groups, updateTransaction]
+    [groups, updateTransaction, getPropagationTargets]
   );
 
   const handleMemberChange = useCallback(
     (tx: NormalizedTransaction, userIds: string[]) => {
-      updateTransaction(tx.id, {
-        selectedUserIds: userIds,
-        userShares: buildUserShareMap(userIds, tx.userShares),
-        status: statusForAssignment(tx.selectedGroupId, userIds),
-      });
+      for (const target of getPropagationTargets(tx)) {
+        const status = statusForAssignment(target.selectedGroupId, userIds);
+        updateTransaction(target.id, {
+          selectedUserIds: userIds,
+          userShares: buildUserShareMap(userIds, target.userShares),
+          status,
+          selected: status === "READY" ? true : target.selected,
+        });
+      }
+    },
+    [updateTransaction, getPropagationTargets]
+  );
+
+  const toggleSelect = useCallback(
+    (tx: NormalizedTransaction) => {
+      updateTransaction(tx.id, { selected: !tx.selected });
     },
     [updateTransaction]
   );
@@ -311,7 +467,7 @@ export function LedgerTable({
     const group = groups.find(
       (g) => g.id.toString() === tx.selectedGroupId
     );
-    const members = group?.members ?? [];
+    const members = getSelectableMembers(group, friends, currentUser);
 
     return (
       <div
@@ -321,7 +477,8 @@ export function LedgerTable({
           else rowRefs.current.delete(index);
         }}
         className={cn(
-          "relative grid grid-cols-[100px_1fr_100px_160px_160px_80px] gap-2 items-center px-3 border-b border-border bg-background text-sm",
+          "relative grid gap-2 items-center px-3 border-b border-border bg-background text-sm",
+          GRID_COLS,
           isActive
             ? "z-20 outline outline-2 outline-ring outline-offset-[-2px]"
             : "z-0",
@@ -340,9 +497,14 @@ export function LedgerTable({
           ) {
             return;
           }
-          navigateToIndex(index);
+          navigateToIndex(index, { openGroupSelector: false });
         }}
       >
+        <Checkbox
+          checked={tx.selected === true}
+          onCheckedChange={() => toggleSelect(tx)}
+          aria-label={`Select ${tx.description}`}
+        />
         <span className="text-xs text-muted-foreground">{tx.date}</span>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
@@ -379,6 +541,9 @@ export function LedgerTable({
         </div>
         <span className="text-right font-mono text-xs">
           {formatCurrency(tx.amount)}
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {tx.cardLabel ?? "—"}
         </span>
 
         {!tx.isRefund ? (
@@ -521,6 +686,34 @@ export function LedgerTable({
     );
   };
 
+  const selectedCount = filtered.filter((tx) => tx.selected).length;
+  const allSelected = filtered.length > 0 && selectedCount === filtered.length;
+  const someSelected = selectedCount > 0;
+  const toggleSelectAll = () => {
+    const shouldSelect = !allSelected;
+    for (const tx of filtered) {
+      if (tx.selected !== shouldSelect) {
+        updateTransaction(tx.id, { selected: shouldSelect });
+      }
+    }
+  };
+  const clearSelection = () => {
+    for (const tx of filtered) {
+      if (tx.selected) updateTransaction(tx.id, { selected: false });
+    }
+  };
+
+  const sortIcon = (column: SortColumn) => {
+    if (sortColumn !== column) {
+      return <ArrowUpDown className="h-3 w-3 opacity-40" />;
+    }
+    return sortDirection === "asc" ? (
+      <ArrowUp className="h-3 w-3" />
+    ) : (
+      <ArrowDown className="h-3 w-3" />
+    );
+  };
+
   const activeTx = filtered[safeActiveIndex];
   const canEditAssignment =
     activeTx &&
@@ -537,19 +730,78 @@ export function LedgerTable({
 
   if (filtered.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-        <p className="text-sm">No transactions to display.</p>
-        <p className="text-xs mt-1">Upload a CSV to get started.</p>
-      </div>
+      <>
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+          <p className="text-sm">No transactions to display.</p>
+          <p className="text-xs mt-1">Upload a CSV to get started.</p>
+        </div>
+        {syncedPopup && (
+          <SyncSuccessPopup
+            message={syncedPopup}
+            onDismiss={() => setSyncedPopup(null)}
+          />
+        )}
+      </>
     );
   }
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-[100px_1fr_100px_160px_160px_80px] gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border">
-        <span>Date</span>
-        <span>Description</span>
-        <span className="text-right">Amount</span>
+      {someSelected && (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+          <span>
+            {selectedCount} selected — included in Bulk Add once assigned a
+            group and members. Assigning one applies to all selected.
+          </span>
+          <button
+            type="button"
+            className="text-xs font-medium text-foreground hover:underline"
+            onClick={clearSelection}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
+      <div
+        className={cn(
+          "grid gap-2 px-3 py-2 text-xs font-medium text-muted-foreground border-b border-border",
+          GRID_COLS
+        )}
+      >
+        <Checkbox
+          checked={allSelected}
+          onCheckedChange={toggleSelectAll}
+          aria-label="Select all"
+        />
+        <button
+          type="button"
+          className="flex items-center gap-1 text-left hover:text-foreground"
+          onClick={() => toggleSort("date")}
+        >
+          Date {sortIcon("date")}
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-left hover:text-foreground"
+          onClick={() => toggleSort("description")}
+        >
+          Description {sortIcon("description")}
+        </button>
+        <button
+          type="button"
+          className="flex items-center justify-end gap-1 text-right hover:text-foreground"
+          onClick={() => toggleSort("amount")}
+        >
+          Amount {sortIcon("amount")}
+        </button>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-left hover:text-foreground"
+          onClick={() => toggleSort("card")}
+        >
+          Card {sortIcon("card")}
+        </button>
         <span>Group</span>
         <span>Members</span>
         <span className="text-right">Actions</span>
@@ -609,7 +861,7 @@ export function LedgerTable({
           )}
           {canEditShares && activeGroup && (
             <ShareEditor
-              members={activeGroup.members}
+              members={getSelectableMembers(activeGroup, friends, currentUser)}
               selectedUserIds={activeTx.selectedUserIds}
               userShares={activeTx.userShares ?? defaultUserShareMap(activeTx.selectedUserIds)}
               onChange={(userShares) =>
@@ -629,6 +881,13 @@ export function LedgerTable({
         selector · Enter send · Delete ignore · Use Edit on posted rows to
         update and re-send
       </p>
+
+      {syncedPopup && (
+        <SyncSuccessPopup
+          message={syncedPopup}
+          onDismiss={() => setSyncedPopup(null)}
+        />
+      )}
     </div>
   );
 }
