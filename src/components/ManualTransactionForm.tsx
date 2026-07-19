@@ -57,6 +57,7 @@ export function ManualTransactionForm() {
       rawDescription: trimmedDescription,
       isRefund,
       category: "Manual",
+      cardLabel: "Manual",
     });
     const withDefaults = applyDefaultRules([transaction], groups)[0];
 
