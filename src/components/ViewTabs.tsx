@@ -5,14 +5,18 @@ import { useApp } from "@/context/AppContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { BalancesView } from "@/components/BalancesView";
 import { BulkSyncButton } from "@/components/BulkSyncButton";
+import { CsvManager } from "@/components/CsvManager";
 import { CsvUpload } from "@/components/CsvUpload";
+import { ExampleLedger } from "@/components/ExampleLedger";
 import { LedgerTable } from "@/components/LedgerTable";
 import { ManualTransactionForm } from "@/components/ManualTransactionForm";
 import { SettingsPanel } from "@/components/SettingsPanel";
 
 export function ViewTabs() {
-  const { transactions } = useApp();
+  const { transactions, hasUploadedCsv } = useApp();
+  const showExamples = transactions.length === 0 && !hasUploadedCsv;
   const [showProcessed, setShowProcessed] = useState(false);
 
   const pendingCount = useMemo(
@@ -37,12 +41,16 @@ export function ViewTabs() {
               </span>
             )}
           </TabsTrigger>
+          {!showExamples && (
+            <TabsTrigger value="balances">Balances</TabsTrigger>
+          )}
           <TabsTrigger value="config">Configuration</TabsTrigger>
         </TabsList>
 
         <div className="flex items-center gap-2">
           <ManualTransactionForm />
           <CsvUpload />
+          <CsvManager />
         </div>
       </div>
 
@@ -60,13 +68,23 @@ export function ViewTabs() {
               Show processed items
             </Label>
           </div>
-          <BulkSyncButton />
+          {!showExamples && <BulkSyncButton />}
         </div>
-        <LedgerTable
-          transactions={transactions}
-          showProcessed={showProcessed}
-        />
+        {showExamples ? (
+          <ExampleLedger showProcessed={showProcessed} />
+        ) : (
+          <LedgerTable
+            transactions={transactions}
+            showProcessed={showProcessed}
+          />
+        )}
       </TabsContent>
+
+      {!showExamples && (
+        <TabsContent value="balances">
+          <BalancesView />
+        </TabsContent>
+      )}
 
       <TabsContent value="config">
         <SettingsPanel />
