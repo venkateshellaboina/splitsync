@@ -75,6 +75,8 @@ function applyProviderAmountLogic(
         isRefund: amountVal < 0,
       };
     case "CAPITAL_ONE_CREDIT":
+    case "DISCOVER_CREDIT":
+    case "CITI_CREDIT":
       return {
         amount: Math.abs(amountVal),
         isRefund: amountVal < 0,
@@ -152,6 +154,12 @@ export function createTransaction(
     selectedGroupId: groupId,
     selectedUserIds: userIds,
   };
+}
+
+export function sortTransactionsByDate(
+  transactions: NormalizedTransaction[]
+): NormalizedTransaction[] {
+  return [...transactions].sort((a, b) => b.date.localeCompare(a.date));
 }
 
 export { buildColumnMapping, type ColumnMapping };
