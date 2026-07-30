@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
-import type { GroceryRuleConfig } from "@/types";
+import type { EmailProviderId, EmailSettings, GroceryRuleConfig } from "@/types";
 import { useApp } from "@/context/AppContext";
 import { GroupSelector } from "@/components/GroupSelector";
 import { MemberMultiSelect } from "@/components/MemberMultiSelect";
@@ -16,9 +16,18 @@ import {
   setGroceryRuleConfig,
 } from "@/lib/storage";
 import {
+  detectProviderFromEmail,
+  PROVIDER_LABELS,
+  PROVIDER_PRESETS,
+} from "@/lib/email-provider";
+import {
   clearSyncedHistory,
   getSyncedCount,
 } from "@/lib/synced-history";
+import {
+  clearSyncedReminders,
+  getSyncedReminderCount,
+} from "@/lib/synced-reminders";
 import { memberDisplayName } from "@/lib/utils";
 
 function formatKeywords(keywords: string[]): string {
@@ -32,12 +41,38 @@ function parseKeywords(value: string): string[] {
     .filter(Boolean);
 }
 
+const DEFAULT_EMAIL_SETTINGS: EmailSettings = {
+  provider: "gmail",
+  email: "",
+  appPassword: "",
+  host: PROVIDER_PRESETS.gmail?.host ?? "",
+  port: PROVIDER_PRESETS.gmail?.port ?? 587,
+};
+
+const NOTICE_TIMEOUT_MS = 10_000;
+
 export function SettingsPanel() {
-  const { token, setToken, refreshGroups, isLoadingGroups, groupsError, groups } =
-    useApp();
+  const {
+    token,
+    setToken,
+    refreshGroups,
+    isLoadingGroups,
+    groupsError,
+    groups,
+    currentUser,
+    emailSettings,
+    setEmailSettings,
+  } = useApp();
+  const splitwiseEmail = currentUser?.email ?? "";
+  const splitwiseProvider = splitwiseEmail
+    ? detectProviderFromEmail(splitwiseEmail)
+    : null;
   const [showToken, setShowToken] = useState(false);
   const [localToken, setLocalToken] = useState(token);
   const [syncedCount, setSyncedCount] = useState(getSyncedCount);
+  const [syncedReminderCount, setSyncedReminderCount] = useState(
+    getSyncedReminderCount
+  );
   const [groceryRule, setGroceryRule] = useState(getGroceryRuleConfig);
   const [grocerySaved, setGrocerySaved] = useState(false);
   const rules = getAutomationRules();
@@ -46,8 +81,38 @@ export function SettingsPanel() {
     (group) => group.id.toString() === groceryRule.groupId
   );
 
+  const [localEmail, setLocalEmail] = useState<EmailSettings>(
+    () => emailSettings ?? DEFAULT_EMAIL_SETTINGS
+  );
+  const [showAppPassword, setShowAppPassword] = useState(false);
+  const [emailSaved, setEmailSaved] = useState(false);
+  const [testStatus, setTestStatus] = useState<
+    "idle" | "sending" | "success" | "error"
+  >("idle");
+  const [testError, setTestError] = useState<string | null>(null);
+  const savedNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const testNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
+      if (testNoticeTimerRef.current) clearTimeout(testNoticeTimerRef.current);
+    };
+  }, []);
+
+  // Keep the form in sync with context (e.g. once auto-fill populates it
+  // after Splitwise data loads) without an effect: adjust state during
+  // render, guarded so it only reacts to an actual change in emailSettings.
+  const [syncedFrom, setSyncedFrom] = useState(emailSettings);
+  if (emailSettings !== syncedFrom) {
+    setSyncedFrom(emailSettings);
+    if (emailSettings) setLocalEmail(emailSettings);
+  }
+
   const handleSave = () => {
-    setToken(localToken.trim());
+    const trimmed = localToken.trim();
+    if (trimmed === token) return;
+    setToken(trimmed);
   };
 
   const updateGroceryRule = (updates: Partial<GroceryRuleConfig>) => {
@@ -64,6 +129,84 @@ export function SettingsPanel() {
   const handleGrocerySave = () => {
     setGroceryRuleConfig(groceryRule);
     setGrocerySaved(true);
+  };
+
+  const handleProviderChange = (provider: EmailProviderId) => {
+    const preset = PROVIDER_PRESETS[provider];
+    setEmailSaved(false);
+    setLocalEmail((prev) => ({
+      ...prev,
+      provider,
+      host: preset?.host ?? prev.host,
+      port: preset?.port ?? prev.port,
+      // Restore the Splitwise account's email when switching back to its
+      // provider; clear it when switching away so a stale address from a
+      // different provider isn't left behind.
+      email: provider === splitwiseProvider ? splitwiseEmail : "",
+    }));
+  };
+
+  const handleSaveEmailSettings = () => {
+    const current = emailSettings ?? DEFAULT_EMAIL_SETTINGS;
+    const unchanged =
+      localEmail.provider === current.provider &&
+      localEmail.email === current.email &&
+      localEmail.host === current.host &&
+      localEmail.port === current.port &&
+      localEmail.appPassword === current.appPassword;
+    if (unchanged) return;
+
+    setEmailSettings(localEmail);
+    setEmailSaved(true);
+    if (savedNoticeTimerRef.current) clearTimeout(savedNoticeTimerRef.current);
+    savedNoticeTimerRef.current = setTimeout(
+      () => setEmailSaved(false),
+      NOTICE_TIMEOUT_MS
+    );
+  };
+
+  const handleSendTest = async () => {
+    setTestStatus("sending");
+    setTestError(null);
+    if (testNoticeTimerRef.current) clearTimeout(testNoticeTimerRef.current);
+
+    const finishWithNotice = (status: "success" | "error", error?: string) => {
+      setTestStatus(status);
+      setTestError(error ?? null);
+      testNoticeTimerRef.current = setTimeout(() => {
+        setTestStatus("idle");
+        setTestError(null);
+      }, NOTICE_TIMEOUT_MS);
+    };
+
+    try {
+      const res = await fetch("/api/reminders/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          smtp: {
+            host: localEmail.host,
+            port: localEmail.port,
+            email: localEmail.email,
+            appPassword: localEmail.appPassword,
+          },
+          to: localEmail.email,
+          subject: "SplitSync test email",
+          body: "This is a test email from SplitSync to confirm your Email Reminders setup is working.",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        finishWithNotice("error", data.error ?? "Failed to send test email");
+        return;
+      }
+      finishWithNotice("success");
+    } catch (err) {
+      finishWithNotice(
+        "error",
+        err instanceof Error ? err.message : "Failed to send test email"
+      );
+    }
   };
 
   return (
@@ -282,6 +425,177 @@ export function SettingsPanel() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Email Reminders</h2>
+        <p className="text-sm text-muted-foreground">
+          Send balance reminders from your own email account via SMTP.
+          Defaults to the email on your Splitwise account — change it if
+          you&apos;d rather send from somewhere else.
+        </p>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="email-provider">Provider</Label>
+            <select
+              id="email-provider"
+              value={localEmail.provider}
+              onChange={(e) =>
+                handleProviderChange(e.target.value as EmailProviderId)
+              }
+              className="h-9 w-full rounded-md border border-border bg-card px-2 text-sm"
+            >
+              {(Object.keys(PROVIDER_LABELS) as EmailProviderId[]).map(
+                (id) => (
+                  <option key={id} value={id}>
+                    {PROVIDER_LABELS[id]}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="email-address">Email address</Label>
+            <Input
+              id="email-address"
+              type="email"
+              value={localEmail.email}
+              onChange={(e) => {
+                setEmailSaved(false);
+                setLocalEmail((prev) => ({ ...prev, email: e.target.value }));
+              }}
+              placeholder="you@example.com"
+            />
+          </div>
+        </div>
+
+        {localEmail.provider === "custom" && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="smtp-host">SMTP host</Label>
+              <Input
+                id="smtp-host"
+                value={localEmail.host}
+                onChange={(e) => {
+                  setEmailSaved(false);
+                  setLocalEmail((prev) => ({ ...prev, host: e.target.value }));
+                }}
+                placeholder="smtp.example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="smtp-port">SMTP port</Label>
+              <Input
+                id="smtp-port"
+                type="number"
+                value={localEmail.port}
+                onChange={(e) => {
+                  setEmailSaved(false);
+                  setLocalEmail((prev) => ({
+                    ...prev,
+                    port: Number(e.target.value) || 587,
+                  }));
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <Label htmlFor="app-password">App password</Label>
+          <div className="relative">
+            <Input
+              id="app-password"
+              type={showAppPassword ? "text" : "password"}
+              value={localEmail.appPassword}
+              onChange={(e) => {
+                setEmailSaved(false);
+                setLocalEmail((prev) => ({
+                  ...prev,
+                  appPassword: e.target.value,
+                }));
+              }}
+              placeholder="Paste the app password from your provider"
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowAppPassword((s) => !s)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showAppPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Never your real account password — see the README for how to
+            generate one for your provider.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button size="sm" onClick={handleSaveEmailSettings}>
+            Save
+          </Button>
+          {emailSaved && (
+            <span className="text-xs text-success-foreground">Saved</span>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSendTest}
+            disabled={
+              testStatus === "sending" ||
+              !localEmail.email ||
+              !localEmail.appPassword ||
+              !localEmail.host
+            }
+          >
+            {testStatus === "sending"
+              ? "Sending…"
+              : "Send test email to myself"}
+          </Button>
+          {testStatus === "success" && (
+            <span className="text-xs text-success-foreground">
+              Test email sent — check your inbox.
+            </span>
+          )}
+          {testStatus === "error" && (
+            <span className="text-xs text-danger-foreground">
+              {testError}
+            </span>
+          )}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Synced Reminders</h2>
+        <p className="text-sm text-muted-foreground">
+          Friends already sent a reminder for their current balance
+          won&apos;t be reminded again until that balance changes.
+        </p>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">
+            {syncedReminderCount} reminder
+            {syncedReminderCount !== 1 ? "s" : ""} sent
+          </span>
+          {syncedReminderCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                clearSyncedReminders();
+                setSyncedReminderCount(0);
+              }}
+            >
+              Clear history
+            </Button>
+          )}
+        </div>
       </section>
     </div>
   );

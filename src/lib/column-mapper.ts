@@ -54,6 +54,7 @@ export function buildColumnMapping(headers: string[]): ColumnMapping | null {
   const dateKey =
     findHeader(cleaned, [
       "transaction date",
+      "trans. date",
       "trans date",
       "txn date",
       "purchase date",
@@ -131,11 +132,26 @@ export function buildColumnMapping(headers: string[]): ColumnMapping | null {
   ) {
     provider = "CAPITAL_ONE_CREDIT";
   } else if (
+    hasDebitCredit &&
+    dateLower === "date" &&
+    cleaned.some((h) => headerMatches(h, ["description"])) &&
+    hasHeader(cleaned, ["status"])
+  ) {
+    provider = "CITI_CREDIT";
+  } else if (
     (dateLower.includes("transaction date") || dateLower === "trans date") &&
     cleaned.some((h) => headerMatches(h, ["description"])) &&
     cleaned.some((h) => headerMatches(h, ["amount"]))
   ) {
     provider = "CHASE_CREDIT";
+  } else if (
+    cleaned.some((h) => headerMatches(h, ["trans. date", "trans date"])) &&
+    !dateLower.includes("transaction date") &&
+    hasHeader(cleaned, ["post date"]) &&
+    amountKey &&
+    cleaned.some((h) => headerMatches(h, ["description"]))
+  ) {
+    provider = "DISCOVER_CREDIT";
   } else if (
     headerMatches(dateKey, ["date"]) &&
     !dateLower.includes("transaction") &&

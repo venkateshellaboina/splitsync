@@ -4,6 +4,8 @@ export type CardProvider =
   | "CAPITAL_ONE_CREDIT"
   | "APPLE_CARD"
   | "WELLS_FARGO_CREDIT"
+  | "DISCOVER_CREDIT"
+  | "CITI_CREDIT"
   | "CUSTOM_GENERIC";
 
 export interface RawTransactionRow {
@@ -34,6 +36,28 @@ export interface NormalizedTransaction {
   /** Set when a synced transaction is reopened for editing. */
   previouslySyncedAt?: string;
   errorMessage?: string;
+  /** Id of the UploadedCsvFile this transaction came from, if any. */
+  sourceFileId?: string;
+  /** Human-readable card/bank label (e.g. "Chase", "Manual"), shown in the Card column. */
+  cardLabel?: string;
+  /** Checkbox state — also determines Bulk Add inclusion. Auto-set true once a group and members are assigned. */
+  selected?: boolean;
+}
+
+export interface UploadedCsvFile {
+  id: string;
+  name: string;
+  size: number;
+  provider: CardProvider;
+  transactionCount: number;
+  uploadedAt: string;
+  contentHash: string;
+}
+
+export interface SplitwiseBalance {
+  currencyCode: string;
+  /** Positive = this friend owes the current user. Negative = the current user owes this friend. */
+  amount: number;
 }
 
 export interface SplitwiseMember {
@@ -41,6 +65,8 @@ export interface SplitwiseMember {
   first_name: string;
   last_name: string | null;
   email: string;
+  /** Only populated for friends (via /get_friends), not group members. */
+  balances?: SplitwiseBalance[];
 }
 
 export interface SplitwiseGroup {
@@ -81,4 +107,14 @@ export interface SyncExpensePayload {
   userIds: number[];
   userShares?: number[];
   payerId: number;
+}
+
+export type EmailProviderId = "gmail" | "outlook" | "yahoo" | "icloud" | "custom";
+
+export interface EmailSettings {
+  provider: EmailProviderId;
+  email: string;
+  appPassword: string;
+  host: string;
+  port: number;
 }
